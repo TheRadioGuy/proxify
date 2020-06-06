@@ -1,0 +1,16 @@
+[package]
+name = "proxify"
+version = "0.1.0"
+authors = ["Sergey Duck <sergeypechnikov326@gmail.com>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+description = "Proxy parser for rust"
+repository = "https://github.com/DuckerMan/proxify/"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+scraper = "0.12"
+futures = "0.3"
+isahc = "0.9"
+base64 = "0.12"
