@@ -14,3 +14,4 @@ scraper = "0.12"
 futures = {version="0.3", features=["thread-pool"]}
 isahc = "0.9"
 base64 = "0.12"
+tokio = {version="0.2", features=["full"]}

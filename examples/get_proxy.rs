@@ -1,12 +1,12 @@
 use proxify::*;
+use tokio::prelude::*;
 
-pub fn main() {
-    let proxy = get_proxy();
-    let proxy = futures::executor::block_on(proxy).unwrap();
-
+#[tokio::main]
+pub async fn main() {
+    let proxy = get_proxy().await.unwrap();
     println!("{:?}", proxy);
     println!("");
 
-    let working = futures::executor::block_on(check_proxies(&proxy, std::time::Duration::from_secs(2)));
+    let working = check_proxies(&proxy, std::time::Duration::from_secs(2)).await;
     println!("{:?}", working);
 }

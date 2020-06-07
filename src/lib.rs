@@ -4,6 +4,7 @@ use isahc::prelude::*;
 use scraper::{element_ref::ElementRef, Html, Selector};
 use std::io::{Read, Write};
 use std::net::SocketAddrV4;
+use tokio::prelude::*;
 
 pub async fn get_proxy() -> Result<Vec<SocketAddrV4>, Box<dyn std::error::Error>> {
     let client = HttpClient::builder()
@@ -28,47 +29,57 @@ pub async fn get_proxy() -> Result<Vec<SocketAddrV4>, Box<dyn std::error::Error>
 
     let selector = Selector::parse("table#proxy_list tbody tr").unwrap();
     let scraper = Html::parse_document(&text);
-    let mut parsed_proxys: Vec<SocketAddrV4> = Vec::new();
+    let mut futures = Vec::new();
+    let mut parsed_proxys: Arc<RwLock<Vec<SocketAddrV4>>> = Arc::new(RwLock::new(Vec::new()));
     for element in scraper.select(&selector) {
-        let inner_html = element.inner_html();
-        let proxy_data = Html::parse_fragment(&inner_html);
-
-        let decoded_ip = {
-            let encoded_ip_selector = Selector::parse("script").unwrap();
-            let encoded_ip_script = proxy_data
-                .select(&encoded_ip_selector)
-                .collect::<Vec<ElementRef>>()[0]
-                .inner_html();
-            let encoded_ip = encoded_ip_script
-                .replace("document.write(Base64.decode(\"", "")
-                .replace("\"))", "");
-            String::from_utf8(base64::decode(&encoded_ip)?)?
-        };
-
-        let port = {
-            let port_selector = Selector::parse("span.fport").unwrap();
-            let port = proxy_data
-                .select(&port_selector)
-                .collect::<Vec<ElementRef>>();
-
-            match port.get(0) {
-                Some(port) => port.inner_html(),
-                None => "0".to_owned(),
+        let element_html = element.inner_html();
+        let cloned = parsed_proxys.clone();
+        let future = tokio::spawn(async move {
+            let proxy_data = Html::parse_fragment(&element_html);
+    
+            let decoded_ip = {
+                let encoded_ip_selector = Selector::parse("script").unwrap();
+                let encoded_ip_script = proxy_data
+                    .select(&encoded_ip_selector)
+                    .collect::<Vec<ElementRef>>()[0]
+                    .inner_html();
+                let encoded_ip = encoded_ip_script
+                    .replace("document.write(Base64.decode(\"", "")
+                    .replace("\"))", "");
+                String::from_utf8(base64::decode(&encoded_ip).unwrap()).unwrap()
+            };
+    
+            let port = {
+                let port_selector = Selector::parse("span.fport").unwrap();
+                let port = proxy_data
+                    .select(&port_selector)
+                    .collect::<Vec<ElementRef>>();
+    
+                match port.get(0) {
+                    Some(port) => port.inner_html(),
+                    None => "0".to_owned(),
+                }
+            };
+                
+            drop(proxy_data);
+            if port != "0" {
+                cloned.write().await.push(format!("{}:{}", decoded_ip, port).parse().unwrap());
             }
-        };
+        });
 
-        if port != "0" {
-            parsed_proxys.push(format!("{}:{}", decoded_ip, port).parse()?);
-        }
+        futures.push(future);
     }
+
+    join_all(futures).await;
 
     // println!("{}", text);
 
-    Ok(parsed_proxys)
+    Ok(Arc::try_unwrap(parsed_proxys).unwrap().into_inner())
 }
 
 use std::str::FromStr;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use std::time::Duration;
 use futures::future::join_all;
 
@@ -81,21 +92,21 @@ pub async fn check_proxies(proxies: &Vec<SocketAddrV4>, time: Duration) -> Vec<S
         let proxy = proxy.clone();
         let worked_cloned = working_proxys.clone();
 
-        let future = async move {
+        let future = tokio::spawn(async move {
             let client = HttpClient::builder()
                 .proxy(Some(formated.parse().unwrap()))
                 .timeout(time)
                 .build().unwrap();
             let response = client.get_async("https://api.ipify.org?format=json").await;
             match response {
-                Ok(_) => worked_cloned.write().unwrap().push(proxy),
-                Err(e) => {}
+                Ok(_) => worked_cloned.write().await.push(proxy),
+                Err(e) => {println!("{}", e)}
             }
-        };
+        });
 
         futures.push(future);
     }
 
     join_all(futures).await;
-    Arc::try_unwrap(working_proxys).unwrap().into_inner().unwrap()
+    Arc::try_unwrap(working_proxys).unwrap().into_inner()
 }
