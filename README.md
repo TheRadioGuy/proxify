@@ -6,7 +6,7 @@
 Put proxify in your dependency section:
 
 ```toml
-proxify = "0.1"
+proxify = "0.2"
 ```
 
 Use it:
