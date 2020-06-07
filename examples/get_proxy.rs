@@ -5,4 +5,8 @@ pub fn main() {
     let proxy = futures::executor::block_on(proxy).unwrap();
 
     println!("{:?}", proxy);
+    println!("");
+
+    let working = futures::executor::block_on(check_proxies(&proxy, std::time::Duration::from_secs(2)));
+    println!("{:?}", working);
 }

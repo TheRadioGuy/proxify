@@ -1,4 +1,5 @@
 // use tokio::prelude::*;
+use futures::executor::ThreadPool;
 use isahc::prelude::*;
 use scraper::{element_ref::ElementRef, Html, Selector};
 use std::io::{Read, Write};
@@ -64,4 +65,37 @@ pub async fn get_proxy() -> Result<Vec<SocketAddrV4>, Box<dyn std::error::Error>
     // println!("{}", text);
 
     Ok(parsed_proxys)
+}
+
+use std::str::FromStr;
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
+use futures::future::join_all;
+
+
+pub async fn check_proxies(proxies: &Vec<SocketAddrV4>, time: Duration) -> Vec<SocketAddrV4> {
+    let working_proxys = Arc::new(RwLock::new(Vec::new()));
+    let mut futures = Vec::new();
+    for proxy in proxies {
+        let formated = format!("socks5://{}", proxy);
+        let proxy = proxy.clone();
+        let worked_cloned = working_proxys.clone();
+
+        let future = async move {
+            let client = HttpClient::builder()
+                .proxy(Some(formated.parse().unwrap()))
+                .timeout(time)
+                .build().unwrap();
+            let response = client.get_async("https://api.ipify.org?format=json").await;
+            match response {
+                Ok(_) => worked_cloned.write().unwrap().push(proxy),
+                Err(e) => {}
+            }
+        };
+
+        futures.push(future);
+    }
+
+    join_all(futures).await;
+    Arc::try_unwrap(working_proxys).unwrap().into_inner().unwrap()
 }
